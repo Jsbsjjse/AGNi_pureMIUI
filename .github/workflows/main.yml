@@ -42,56 +42,54 @@ jobs:
           kernel-ccache-haydn-
           kernel-ccache-
 
-    - name: Setup Toolchain (Google Clang r522817)
+    - name: Setup LLVM Clang 18 (official)
       run: |
-        # 清理可能残留的文件，避免 mkdir 冲突
-        rm -rf $HOME/google-clang
-        mkdir -p $HOME/google-clang
-        cd $HOME/google-clang
-        wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-14.0.0_r29/clang-r522817.tar.gz
-        tar -zxf clang-r522817.tar.gz
+        mkdir -p ${{ github.workspace }}/toolchain
+        cd ${{ github.workspace }}/toolchain
+        wget --retry-connrefused --waitretry=1 --timeout=20 --tries=5 \
+          -q https://github.com/llvm/llvm-project/releases/download/llvmorg-18.1.8/clang+llvm-18.1.8-x86_64-linux-gnu-ubuntu-18.04.tar.xz
+        tar -xf clang+llvm-18.1.8-x86_64-linux-gnu-ubuntu-18.04.tar.xz
+        mv clang+llvm-18.1.8-x86_64-linux-gnu-ubuntu-18.04/* .
+        rmdir clang+llvm-18.1.8-x86_64-linux-gnu-ubuntu-18.04
         cd bin
-        # 创建 aarch64-linux-android- 前缀符号链接（工具链已大部分自带，但补全以防缺失）
         for tool in clang clang++ ld.lld lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip; do
           if [ -f $tool ]; then
-            ln -sf $tool aarch64-linux-android-$tool 2>/dev/null || true
+            ln -sf $tool aarch64-linux-android-$tool
           fi
         done
-        ln -sf ld.lld aarch64-linux-android-ld 2>/dev/null || true
-        cd ../..
-        echo "CLANG_PATH=$HOME/google-clang/bin" >> $GITHUB_ENV
+        ln -sf ld.lld aarch64-linux-android-ld
+        echo "TOOLCHAIN_DIR=${{ github.workspace }}/toolchain" >> $GITHUB_ENV
 
-    - name: Patch build_kernel_haydn.sh (remove NoKernelSU & disable LTO)
+    - name: Patch build script (remove NoKernelSU & disable LTO)
       run: |
         cp build_kernel_haydn.sh build_kernel_haydn.sh.bak
-        # 删除 NoKernelSU 重复构建部分
-        sed -i '/NO KERNELSU/,/fi/d' build_kernel_haydn.sh
-        # 在生成配置后插入禁用 LTO 并重新生成配置的命令
-        sed -i '/make O=\$COMPILEDIR_HAYDN \$CONFIG1/a\ \n# 强制禁用 ThinLTO\n$KERNELDIR/scripts/config --file $COMPILEDIR_HAYDN/.config --disable CONFIG_LTO_CLANG_THIN --disable CONFIG_LTO_CLANG_FULL --enable CONFIG_LTO_NONE\nmake O=$COMPILEDIR_HAYDN olddefconfig' build_kernel_haydn.sh
-        echo "Script patched successfully"
+        # 删除从 "NO KERNELSU" 开始到结尾的所有行（去掉重复构建）
+        sed -i '/NO KERNELSU/,$d' build_kernel_haydn.sh
+        # 在生成配置后插入禁用 LTO 的命令
+        sed -i '/make O=\$COMPILEDIR_HAYDN \$CONFIG1/a\ \n# Disable ThinLTO\n$KERNELDIR/scripts/config --file $COMPILEDIR_HAYDN/.config --disable CONFIG_LTO_CLANG_THIN --disable CONFIG_LTO_CLANG_FULL --enable CONFIG_LTO_NONE\nmake O=$COMPILEDIR_HAYDN olddefconfig' build_kernel_haydn.sh
 
     - name: Prepare environment
       run: |
         mkdir -p ~/WORKING_DIRECTORY
-        cat > ~/WORKING_DIRECTORY/snapdragon_llvm.sh << 'EOF'
+        cat > ~/WORKING_DIRECTORY/snapdragon_llvm.sh << EOF
         export CROSS_COMPILE=aarch64-linux-android-
         export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
         export CLANG_TRIPLE=aarch64-linux-gnu
         export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
         export CC=clang
         export LD=ld.lld
-        export PATH="$HOME/google-clang/bin:$PATH"
+        export PATH="${{ env.TOOLCHAIN_DIR }}/bin:\$PATH"
         EOF
         touch ~/WORKING_DIRECTORY/AGNi_stamp.sh
         if [ ! -f AGNi_version.sh ]; then
           echo 'export AGNI_VERSION="v7.10"' > AGNi_version.sh
         fi
-        echo "COMPILEDIR_HAYDN=$GITHUB_WORKSPACE/OUTPUT" >> $GITHUB_ENV
-        echo "READY_ZIP=$GITHUB_WORKSPACE/READY_ZIP" >> $GITHUB_ENV
+        echo "COMPILEDIR_HAYDN=${{ github.workspace }}/OUTPUT" >> $GITHUB_ENV
+        echo "READY_ZIP=${{ github.workspace }}/READY_ZIP" >> $GITHUB_ENV
 
     - name: Run build_kernel_haydn.sh
       run: |
-        export PATH="$HOME/google-clang/bin:$PATH"
+        export PATH="${{ env.TOOLCHAIN_DIR }}/bin:$PATH"
         export CC=clang
         export LD=ld.lld
         export CROSS_COMPILE=aarch64-linux-android-
@@ -99,8 +97,8 @@ jobs:
         export CLANG_TRIPLE=aarch64-linux-gnu
         export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
         export CCACHE_DISABLE=1
-        export COMPILEDIR_HAYDN="$GITHUB_WORKSPACE/OUTPUT"
-        export READY_ZIP="$GITHUB_WORKSPACE/READY_ZIP"
+        export COMPILEDIR_HAYDN="${{ github.workspace }}/OUTPUT"
+        export READY_ZIP="${{ github.workspace }}/READY_ZIP"
         mkdir -p "$COMPILEDIR_HAYDN" "$READY_ZIP"
         chmod +x build_kernel_haydn.sh
         bash -x build_kernel_haydn.sh
@@ -118,7 +116,7 @@ jobs:
       with:
         tag_name: haydn-kernel-${{ github.run_number }}
         name: AGNi haydn Kernel ${{ github.run_number }}
-        body: 自动编译 | AGNi Kernel + ReSukiSU (无LTO, 单次构建)
+        body: 自动编译 | AGNi Kernel + ReSukiSU (无LTO, 单次构建, Clang 18)
         files: ./*.zip
         draft: false
         prerelease: false
