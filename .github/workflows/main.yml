@@ -31,7 +31,7 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential git curl wget bison flex zip bc cpio libssl-dev ccache python-is-python3 python2 gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+        sudo apt-get install -y build-essential git curl wget bison flex zip bc cpio libssl-dev ccache python-is-python3 python2 gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi libtinfo5
 
     - name: Setup Cache (ccache)
       uses: actions/cache@v5
@@ -63,10 +63,10 @@ jobs:
     - name: Patch build script (remove NoKernelSU & disable LTO)
       run: |
         cp build_kernel_haydn.sh build_kernel_haydn.sh.bak
-        # 删除从 "NO KERNELSU" 开始到结尾的所有行（去掉重复构建）
+        # 删除从 "NO KERNELSU" 开始到结尾的所有行
         sed -i '/NO KERNELSU/,$d' build_kernel_haydn.sh
-        # 在生成配置后插入禁用 LTO 的命令
-        sed -i '/make O=\$COMPILEDIR_HAYDN \$CONFIG1/a\ \n# Disable ThinLTO\n$KERNELDIR/scripts/config --file $COMPILEDIR_HAYDN/.config --disable CONFIG_LTO_CLANG_THIN --disable CONFIG_LTO_CLANG_FULL --enable CONFIG_LTO_NONE\nmake O=$COMPILEDIR_HAYDN olddefconfig' build_kernel_haydn.sh
+        # 在生成配置后插入禁用 LTO 的命令（先检查 .config 是否存在）
+        sed -i '/make O=\$COMPILEDIR_HAYDN \$CONFIG1/a\ \n# Disable ThinLTO\nif [ -f $COMPILEDIR_HAYDN/.config ]; then\n  $KERNELDIR/scripts/config --file $COMPILEDIR_HAYDN/.config --disable CONFIG_LTO_CLANG_THIN --disable CONFIG_LTO_CLANG_FULL --enable CONFIG_LTO_NONE\n  make O=$COMPILEDIR_HAYDN olddefconfig\nfi' build_kernel_haydn.sh
 
     - name: Prepare environment
       run: |
