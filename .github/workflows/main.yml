@@ -44,13 +44,14 @@ jobs:
 
     - name: Setup Toolchain (Google Clang r522817)
       run: |
+        # 清理可能残留的文件，避免 mkdir 冲突
+        rm -rf $HOME/google-clang
         mkdir -p $HOME/google-clang
         cd $HOME/google-clang
-        # 使用 AOSP 官方预编译 Clang r522817 (Android 14 使用的版本)
         wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-14.0.0_r29/clang-r522817.tar.gz
         tar -zxf clang-r522817.tar.gz
         cd bin
-        # 确保 aarch64-linux-android- 前缀链接存在（实际该包已自带）
+        # 创建 aarch64-linux-android- 前缀符号链接（工具链已大部分自带，但补全以防缺失）
         for tool in clang clang++ ld.lld lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip; do
           if [ -f $tool ]; then
             ln -sf $tool aarch64-linux-android-$tool 2>/dev/null || true
@@ -62,13 +63,11 @@ jobs:
 
     - name: Patch build_kernel_haydn.sh (remove NoKernelSU & disable LTO)
       run: |
-        # 备份原脚本
         cp build_kernel_haydn.sh build_kernel_haydn.sh.bak
-        # 删除从 "#############################  NO KERNELSU  #######################################" 开始的所有行
+        # 删除 NoKernelSU 重复构建部分
         sed -i '/NO KERNELSU/,/fi/d' build_kernel_haydn.sh
-        # 在 "make O=$COMPILEDIR_HAYDN $CONFIG1" 之后插入禁用 LTO 的命令
+        # 在生成配置后插入禁用 LTO 并重新生成配置的命令
         sed -i '/make O=\$COMPILEDIR_HAYDN \$CONFIG1/a\ \n# 强制禁用 ThinLTO\n$KERNELDIR/scripts/config --file $COMPILEDIR_HAYDN/.config --disable CONFIG_LTO_CLANG_THIN --disable CONFIG_LTO_CLANG_FULL --enable CONFIG_LTO_NONE\nmake O=$COMPILEDIR_HAYDN olddefconfig' build_kernel_haydn.sh
-        # 确保脚本中不再重复编译 NoKernelSU
         echo "Script patched successfully"
 
     - name: Prepare environment
