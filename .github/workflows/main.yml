@@ -12,7 +12,7 @@ on:
 jobs:
   build:
     name: Build Kernel haydn
-    runs-on: ubuntu-22.04   # 22.04 官方源有 python2
+    runs-on: ubuntu-22.04
 
     steps:
     - name: Checkout Source
@@ -42,46 +42,57 @@ jobs:
           kernel-ccache-haydn-
           kernel-ccache-
 
-    - name: Setup Toolchain (ZyC-Clang 16)
+    - name: Setup Toolchain (ZyC-Clang 16) with prefix symlinks
       run: |
         mkdir -p $HOME/zyc-clang
         cd $HOME/zyc-clang
         wget -q https://github.com/ZyCromerZ/Clang/releases/download/16.0.6-20260510-release/Clang-16.0.6-20260510.tar.gz
         tar -zxf Clang-16.0.6-20260510.tar.gz
+        cd bin
+        # 为 aarch64-linux-android- 前缀创建符号链接
+        for tool in clang clang++ ld.lld lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip; do
+          if [ -f $tool ]; then
+            ln -sf $tool aarch64-linux-android-$tool
+          fi
+        done
+        # 为 arm-linux-androideabi- 前缀创建符号链接
+        for tool in clang clang++ ld.lld; do
+          if [ -f $tool ]; then
+            ln -sf $tool arm-linux-androideabi-$tool
+          fi
+        done
+        # 确保链接可用
+        ls -la aarch64-linux-android-* | head -10
 
-    - name: Prepare environment and fix build script
+    - name: Prepare environment
       run: |
-        # 创建 WORKING_DIRECTORY 和 snapdragon_llvm.sh 来覆盖硬编码路径
         mkdir -p ~/WORKING_DIRECTORY
         cat > ~/WORKING_DIRECTORY/snapdragon_llvm.sh << 'EOF'
-        export CROSS_COMPILE="$HOME/zyc-clang/bin/aarch64-linux-android-"
-        export CROSS_COMPILE_ARM32="$HOME/zyc-clang/bin/arm-linux-androideabi-"
+        export CROSS_COMPILE=aarch64-linux-android-
+        export CROSS_COMPILE_ARM32=arm-linux-androideabi-
         export CLANG_TRIPLE=aarch64-linux-gnu
-        export CROSS_COMPILE_COMPAT="$HOME/zyc-clang/bin/arm-linux-androideabi-"
+        export CROSS_COMPILE_COMPAT=arm-linux-androideabi-
         export CC=clang
         export LD=ld.lld
         export PATH="$HOME/zyc-clang/bin:$PATH"
         EOF
-        # 创建空的 AGNi_stamp.sh 避免 source 失败
         touch ~/WORKING_DIRECTORY/AGNi_stamp.sh
-        # 如果仓库没有 AGNi_version.sh，创建一个默认版本
         if [ ! -f AGNi_version.sh ]; then
           echo 'export AGNI_VERSION="v7.10"' > AGNi_version.sh
         fi
-        # 设置必须的目录变量，避免 mkdir missing operand
         echo "COMPILEDIR_HAYDN=$GITHUB_WORKSPACE/OUTPUT" >> $GITHUB_ENV
         echo "READY_ZIP=$GITHUB_WORKSPACE/READY_ZIP" >> $GITHUB_ENV
 
     - name: Run build_kernel_haydn.sh
       run: |
-        # 重新导出环境变量（确保子进程可见）
         export PATH="$HOME/zyc-clang/bin:$PATH"
         export CC=clang
         export LD=ld.lld
-        export CROSS_COMPILE="$HOME/zyc-clang/bin/aarch64-linux-android-"
-        export CROSS_COMPILE_ARM32="$HOME/zyc-clang/bin/arm-linux-androideabi-"
+        export CROSS_COMPILE=aarch64-linux-android-
+        export CROSS_COMPILE_ARM32=arm-linux-androideabi-
         export CLANG_TRIPLE=aarch64-linux-gnu
-        export CROSS_COMPILE_COMPAT="$HOME/zyc-clang/bin/arm-linux-androideabi-"
+        export CROSS_COMPILE_COMPAT=arm-linux-androideabi-
+        export CCACHE_DISABLE=1   # 禁用 ccache，避免干扰
         export COMPILEDIR_HAYDN="$GITHUB_WORKSPACE/OUTPUT"
         export READY_ZIP="$GITHUB_WORKSPACE/READY_ZIP"
         mkdir -p "$COMPILEDIR_HAYDN" "$READY_ZIP"
