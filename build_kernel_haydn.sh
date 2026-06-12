@@ -58,6 +58,11 @@ mkdir ~/.cache/clang_thinlto-cache 2>/dev/null
 ln -s ~/.cache/clang_thinlto-cache $COMPILEDIR_HAYDN/.thinlto-cache 2>/dev/null
 
 make O=$COMPILEDIR_HAYDN $CONFIG1
+
+# 禁用 ThinLTO 避免链接器崩溃
+scripts/config --file $COMPILEDIR_HAYDN/.config --disable CONFIG_LTO_CLANG_THIN
+scripts/config --file $COMPILEDIR_HAYDN/.config --enable CONFIG_LTO_NONE
+
 make -j`nproc --ignore=2` O=$COMPILEDIR_HAYDN
 
 if [ $SYNC_CONFIG -eq 1 ]; then # SYNC CONFIG
@@ -89,57 +94,6 @@ if [ -f $KERNELDIR/$DIR/Image ]; then
 	echo " <<<<< AGNi has been built for $DEVICE !!! >>>>>>"
 	echo "         VERSION: AGNi $AGNI_VERSION $AGNI_BUILD_TYPE"
 	echo "            FILE: $FILENAME"
-#	cd $KERNELDIR && ./abi_generate.sh
 else
 	echo " >>>>> AGNi $DEVICE BUILD ERROR <<<<<"
 fi
-
-#############################  NO KERNELSU  #######################################
-
-sed -i 's/CONFIG_KSU=y/# CONFIG_KSU is not set/' $COMPILEDIR_HAYDN/.config
-sed -i 's/CONFIG_KSU_NEXT=y/# CONFIG_KSU_NEXT is not set/' $COMPILEDIR_HAYDN/.config
-FILENAME="AGNi_kernel-$DEVICE-$AGNI_VERSION-$AGNI_BUILD_TYPE-NoKSU.zip"
-
-echo ""
-echo " ~~~~~ Cross-compiling AGNi kernel $DEVICE NoKernelSU ~~~~~"
-echo "         VERSION: AGNi $AGNI_VERSION $AGNI_BUILD_TYPE"
-echo ""
-
-DIR="BUILT-$DEVICE"
-rm -rf $KERNELDIR/$DIR
-mkdir -p $KERNELDIR/$DIR
-cd $KERNELDIR/
-
-make -j`nproc --ignore=2` O=$COMPILEDIR_HAYDN
-
-rm $COMPILEDIR_HAYDN/.config $COMPILEDIR_HAYDN/.config.old 2>/dev/null
-
-if ([ -f $COMPILEDIR_HAYDN/arch/arm64/boot/Image ]); then
-	mv $COMPILEDIR_HAYDN/arch/arm64/boot/Image $KERNELDIR/$DIR/Image
-	mv $COMPILEDIR_HAYDN/arch/arm64/boot/dtb.img $KERNELDIR/$DIR/dtb.img
-	mv $COMPILEDIR_HAYDN/arch/arm64/boot/dtbo.img $KERNELDIR/$DIR/dtbo.img
-else
-	echo "         ERROR: Cross-compiling AGNi kernel $DEVICE."
-	rm -rf $KERNELDIR/$DIR
-fi
-
-echo ""
-
-if [ -f $KERNELDIR/$DIR/Image ]; then
-	cp -r $KERNELDIR/anykernel3/* $KERNELDIR/$DIR/
-	cd $KERNELDIR/$DIR/
-	zip -rq $READY_ZIP/$FILENAME *
-	if [ -f ~/WORKING_DIRECTORY/zipsigner-3.0.jar ]; then
-		echo "  Zip Signing...."
-		java -jar ~/WORKING_DIRECTORY/zipsigner-3.0.jar $READY_ZIP/$FILENAME $READY_ZIP/$FILENAME-signed 2>/dev/null
-		mv $READY_ZIP/$FILENAME-signed $READY_ZIP/$FILENAME
-	fi
-	rm -rf $KERNELDIR/$DIR
-	echo " <<<<< AGNi has been built for $DEVICE !!! >>>>>>"
-	echo "         VERSION: AGNi $AGNI_VERSION $AGNI_BUILD_TYPE"
-	echo "            FILE: $FILENAME"
-#	cd $KERNELDIR && ./abi_generate.sh
-else
-	echo " >>>>> AGNi $DEVICE BUILD ERROR <<<<<"
-fi
-
