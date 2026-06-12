@@ -19,6 +19,7 @@ jobs:
       uses: actions/checkout@v6
       with:
         fetch-depth: 1
+        submodules: true   # 拉取子模块，避免硬编码路径相关脚本缺失
 
     - name: Cleanup Disk Space
       run: |
@@ -30,7 +31,7 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential git curl wget bison flex zip bc cpio libssl-dev ccache python-is-python3
+        sudo apt-get install -y build-essential git curl wget bison flex zip bc cpio libssl-dev ccache python-is-python3 python2
 
     - name: Setup Cache (ccache)
       uses: actions/cache@v5
@@ -48,8 +49,23 @@ jobs:
         wget -q https://github.com/ZyCromerZ/Clang/releases/download/16.0.6-20260510-release/Clang-16.0.6-20260510.tar.gz
         tar -zxvf Clang-16.0.6-20260510.tar.gz
 
+    - name: Verify Toolchain
+      run: |
+        ls -la $HOME/zyc-clang/bin/
+        $HOME/zyc-clang/bin/clang --version
+        echo "Checking ld.lld..."
+        ls -la $HOME/zyc-clang/bin/ld.lld || echo "ld.lld not found, will use default"
+
     - name: Run build_kernel_haydn.sh
       run: |
+        # 将 ZyC-Clang 加入 PATH，覆盖脚本内的硬编码路径
+        export PATH="$HOME/zyc-clang/bin:$PATH"
+        export CC=clang
+        export LD=ld.lld
+        # 设置交叉编译前缀，可根据脚本需求调整
+        export CROSS_COMPILE=aarch64-linux-android-
+        # 如果内核还需要 GNU binutils，可取消下面一行的注释
+        # sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
         chmod +x build_kernel_haydn.sh
         bash build_kernel_haydn.sh
 
